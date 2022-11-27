@@ -1,0 +1,441 @@
+---
+title: "Untitled"
+author: "Jaeyuel Park"
+date: '2022 5 1 '
+output:
+  word_document: default
+  pdf_document:
+    latex_engine: xelatex
+mainfont: NanumGothic
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(100)
+##패키지 
+library(httr)
+library(jsonlite)
+library(rJava)
+library(rvest)
+library(RSelenium)
+library(quanteda)
+library(tidyverse)
+library(stringi)
+library(ggplot2)
+library(quanteda.textstats)
+```
+## Objectives
+
+### '던전 앤 파이터즈 유저들은 무엇에 관심이 있을까?
+
+ '무엇이 남았는가?','이 게임은 무엇이 특별한 것일까?'. 처음으로 던전 앤 파이터를 플레이하기 전에 품고 있던 의문들입니다. 이러한 의문들에 초점을 맞추어 게임을 플레이했고, 100 레벨을 찍었습니다.
+ 
+ '아직은 잘 모르겠다.' 100레벨을 찍고 들었던 생각입니다. 이에 다음과 같은 질문에 초점을 맞추어 분석을 진행했습니다.
+ 
+ '기존의 유저들은 왜 던전 앤 파이터즈를 플레이 할까?'. 즉,'던전 앤 파이터즈 유저들은 무엇에 관심이 있을까?'라는 질문이 이 데이터 분석의 목표 입니다.
+
+## Overview
+
+  similarweb을 통해 던전앤 파이터즈 유저들의 상위 트래픽을 확인하였고, 던파조선과 dc던전앤파이터갤러리가 높은 던전앤 파이터즈 사이트와 높은 연결성을 보여줬습니다.
+
+ 이에 분석은 던파조선과 던전 앤 파이터 갤러리의 각 각 200pg의 글들( 8000~9000개의 게시글)을 바탕으로 진행되었습니다. 
+ 
+ 간단히 token과 bigram의 빈도수를 통해, 유저들이 언급하는 빈도수가 높은 단어와 구들을 살펴보았습니다. 이를 통해, 다음과 같은 사실을 알 수 있었습니다.
+ 
+  1. 현재 유저들이 가장 큰 관심을 두고 있는 것은, 파괴된 죽음의 성 마스터 컨텐츠였습니다. 가장 많은 token 빈도수를 차지 했습니다.  
+  2. 장비의 경우 105레벨 장비인 엔트정령 시리즈에 관심도가 높았는데, 이는 DC갤러리의 바이그램, 던파조선의 바이그램을 통해 확인 할 수 있었습니다. 
+  3. 던파조선에서는 상위권에 없었지만, DC의 경우에는 명성에 관심이 많았습니다. 이는 파괴된 죽음의 성 마스터 입장권과 관련이 있어 보입니다. 
+  4. 피로도에 대하여, 다양한 논의가 진행되고 있어 보입니다. 
+  
+## Getting Data & Cleaning Data
+
+ similarweb에서 df.nexon.com을 검색하면, 다음과 같은 사실을 알 수 있습니다. 
+ 1) Top outgoing link에서 결제 페이지를 제외하면, 8.89%가 dc던전앤 파이터즈 갤러리로 향합니다.
+ 2) Audience interest의 other going sites들 중에서는 던파조선이 링크되어 있었습니다. 
+ 
+ 그렇기 때문에, DC 던전앤 파이터즈 갤러리의 200pg 분량, 던파 조선 게시판 200pg 분량의 게시글을 스크래핑 했습니다. 
+  
+  R의 tidyverse, stringi, quanteda 패키지를 활용하여 데이터를 정제했습니다. 
+```{r dc_scraping, eval=FALSE,echo=FALSE}
+link <- c()
+n <- 201 
+
+for(i in 1:n){ 
+  tryCatch({ 
+    
+    res <- GET(url = 'https://gall.dcinside.com/board/lists/', 
+                   query = list(id = 'd_fighter_new2', 
+                                page=i)) 
+    
+    
+    
+    cat(i, '페이지 수집 중. 상태코드는', status_code(x = res), '입니다.\n') 
+    
+    
+    
+    ## 링크 수집 
+    
+    link_tmp <- res %>% 
+      read_html() %>%  
+      html_nodes('td.gall_tit.ub-word') %>% 
+      html_nodes('a:nth-child(1)') %>% 
+      html_attr('href') %>%
+      unique() 
+    ##첫 번째 줄 javascript 제거
+    link_tmp <- link_tmp[2:length(link_tmp)]
+
+    if (length(link_tmp) == 0) { 
+      link <- append(link, "수동확인") 
+    } else { 
+      link <- append(link, link_tmp) 
+    }  
+    
+    
+    
+    Sys.sleep(time = 1)  #### DDOS 방지
+    
+  }, error = function(e) cat("불러올 수 없습니다!\n")) 
+  
+} 
+
+
+link <- paste0("https://gall.dcinside.com/",link) 
+
+
+
+
+
+## RSelenium 
+
+remDr <- remoteDriver(remoteServerAddr="localhost",  
+                      port=4445L,  
+                      browserName="chrome") 
+remDr$open() 
+
+
+titles <- c() 
+dates <- c() 
+bodies <-c() 
+
+for (i in 1:1000){ 
+    tryCatch({ 
+    
+    remDr$navigate(link[i]) 
+    body <- remDr$getPageSource()[[1]] 
+    body <- body %>% read_html() 
+    
+    cat('현재', i, '페이지 수집 중! \n')  
+    
+    
+    
+    ## 제목 
+    
+    titles_tmp <- body %>%  
+      html_nodes("span.title_subject") %>%  
+      html_text() 
+    
+    if (length(titles_tmp) == 0) { 
+      titles <- append(titles, "수동확인") 
+    } else { 
+      titles <- append(titles, titles_tmp) 
+    }  
+    
+    
+    ## 날짜 
+    
+    dates_tmp <- body %>%  
+      html_nodes("span.gall_date") %>%  
+      html_text()
+    
+    if (length(dates_tmp) == 0) { 
+      dates <- append(dates, "수동확인") 
+    } else { 
+      dates <- append(dates, dates_tmp) 
+    }  
+    
+    
+    ## 본문 
+    
+    bodies_tmp <- body %>%  
+      html_nodes("div.writing_view_box") %>%  
+      html_text() 
+    
+    
+    if (length(bodies_tmp) == 0) { 
+      bodies <- append(bodies, "수동확인") 
+    } else { 
+      bodies <- append(bodies, bodies_tmp) 
+    }  
+    
+    
+    
+    
+
+    
+    
+    Sys.sleep(time = 1)  #### DDOS 방지
+    
+  }, error = function(e) cat("불러올 수 없습니다!\n")) 
+} 
+
+DC_titles <- tibble('titles'=titles)
+DC_bodies <- tibble('body'=bodies)
+DC_dates <- tibble('date'=dates)
+DC <- cbind(DC_titles,DC_bodies)
+DC<- cbind(DC,DC_dates)
+```
+
+
+```{r 던파조선,eval=FALSE,echo=FALSE}
+link <- c()
+url_dj='https://df.gamechosun.co.kr/board/list.php'
+
+for (i in 1:200){
+  res <- GET(url=url_dj, query= list(bid='tip',page=i))
+  link_tmp <- res %>%
+    read_html() %>%
+    html_nodes('td.rec_subject') %>%
+    html_nodes('a:nth-of-type(1)') %>%
+    html_attr('href') %>%
+    unique()
+  
+  link <- append(link,link_tmp)
+  
+}
+
+link <- paste0('https://df.gamechosun.co.kr/board/',link)
+remDr <- remoteDriver(remoteServerAddr="localhost",  
+                      port=4445L,  
+                      browserName="chrome") 
+remDr$open() 
+
+titles <- c() 
+dates <- c() 
+bodies <-c() 
+
+for (i in 1:length(link)){ 
+  tryCatch({ 
+      
+      remDr$navigate(link[i]) 
+      body <- remDr$getPageSource()[[1]] 
+      body <- body %>% read_html() 
+      
+      cat('현재', i, '페이지 수집 중! \n')  
+      
+      
+      
+      ## 제목 
+      titles_tmp <- body %>% 
+        html_nodes('tr') %>%
+        html_nodes('td:nth-of-type(1)') %>% 
+        html_nodes('h1:nth-of-type(1)') %>%
+        html_text()
+      
+      if (length(titles_tmp) == 0) { 
+        titles <- append(titles, "수동확인") 
+      } else { 
+        titles <- append(titles, titles_tmp) 
+      }  
+      
+      
+      
+      ## 날짜 
+     dates_tmp <- body %>%
+        html_nodes('tr') %>%
+        html_nodes('th.colv_date') %>%
+        html_nodes('span.f12')
+      
+      if (length(dates_tmp) == 0) { 
+        dates <- append(dates, "수동확인") 
+      } else { 
+        dates <- append(dates, dates_tmp) 
+      }  
+       
+      
+      
+      ## 본문 
+      bodies_tmp <- body %>%  
+        html_nodes(xpath='//*[@id="NewsAdContent"]') %>%
+        html_text()
+      
+      
+      if (length(bodies_tmp) == 0) { 
+        bodies <- append(bodies, "수동확인") 
+      } else { 
+        bodies <- append(bodies, bodies_tmp) 
+      }  
+      
+      
+      
+      
+      
+      
+      
+      Sys.sleep(time = 1)  #### DDOS 방지
+      
+    }, error = function(e) cat("불러올 수 없습니다!\n")) 
+} 
+
+DJ_titles <- tibble('titles'=titles)
+DJ_bodies <- tibble('body'=bodies)
+DJ_dates <- tibble('date'=dates)
+DJ <- cbind(DJ_titles,DJ_bodies)
+DJ <- cbind(DJ,DJ_dates)
+```
+
+
+
+
+```{r quanteda,echo=FALSE}
+
+##크롤링 중간에 멈추는 과정이 있어서 나눠서 저장후에 합쳐서 저장하는 과정을 거쳤습니다.
+dc_whole <- readRDS('dc_whole')
+DJ_whole <- readRDS('DJ_whole')
+
+
+##corpus로 변환
+DC<-corpus(dc_whole) ##title & body dc던전앤파이터
+DJ<-corpus(DJ_whole) ##title & body 던파조선
+
+
+
+##tokenize(punctuations, symobls, numbers removed)
+DC_tokens<-tokens(DC,remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE)
+DJ_tokens<-tokens(DJ,remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE)
+
+
+##DFM(document feature matrix)
+DC_dfm <- dfm(DC_tokens)
+DJ_dfm <- dfm(DJ_tokens)
+
+```
+
+
+
+```{r preprocessing,text cleansing,echo=FALSE}
+##dfm을 통해 topfeatures를 확인 했을 때, 역시나 쓸모없는 단어들이 top 40에 있으니 수동으로 어느 정도는 제거 해준다
+
+##쓸모없는 단어들 자주 보인
+propane<-c('ㅈㄴ','ㅅㅂ','ㅆㅂ','ㄹㅇ','잘','같음','또','많이','같은데','뭐','아니면','그','이렇게','일단','다른','ㅋㅋㅋㅋ','ㅋㅋ','ㅋ','있는','존나','그리고','뭔가','이건','것','거의','거','있음','없음','어떻게','그','나도','이렇게','저','아니','에','ㅈ','ㅋㅋㅋ','제','아','이게','하고','오늘','개','아니라','그래도','ㅇㅅㅇ','와','내가','보면','할','아님','던파','솔직히','or','때','그럼','시발','이제','시')
+top_40<- names(topfeatures(DC_dfm,40))
+top_40<-top_40[c(-12,-20,-21,-29,-30,-39)]
+DC_tokens<-tokens_remove(DC_tokens,top_40)
+DC_dfm <- dfm(DC_tokens)
+##명성, 파죽마, 커스텀, 뉴비, 딜, 캐릭, 퍼,스증과 같은 게임과 관련 있는 단어들 제외
+##반복
+top_40 <- names(topfeatures(DC_dfm,40))
+top_40<- top_40[c(7,8,9,10,13,16,17,19,20,21,22,23,24,25,26,27,31,32,34,38,40)]
+DC_tokens<-tokens_remove(DC_tokens,top_40)
+DC_tokens<-tokens_remove(DC_tokens,propane)
+DC_dfm <- dfm(DC_tokens)
+
+
+##DJ DC와 동일한 프로세스
+top_40<-names(topfeatures(DJ_dfm,40))
+top_40 <- top_40[c(-16,-17,-24,-28,-29,-30,-31)]
+DJ_tokens<-tokens_remove(DJ_tokens,top_40)
+DJ_tokens<-tokens_remove(DJ_tokens,propane)
+DJ_dfm <- dfm(DJ_tokens)
+
+
+```
+
+## EDA
+
+### DC던전앤파이터즈 갤러리 token 빈도수 plot
+```{r 던전앤파이터즈 갤러리 frq plot, echo=FALSE, warning=FALSE, verbose=FALSE, fig.showtext=TRUE}
+DC_dfm %>% 
+  textstat_frequency(n = 30) %>% 
+  ggplot(aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_point() +
+  coord_flip() +
+  labs(x = NULL, y = "Frequency") +
+  theme_minimal()
+```
+ 던전앤 파이터즈 갤러리는 명성, 파죽마, 과소모, 뉴비 순으로 관심이 많았다. 커스텀, 뉴비, 감전,길드 등에 대한 관심도 눈에 띕니다. 이 중 길드의 경우에는 광고가 큰 비중을 차지함을 bigram 분석 과정에서 발견했습니다. 
+
+
+### 던파 조선 token 빈도수 plot
+
+```{r 던파조선 frq plot, echo=FALSE, fig.showtext=TRUE, warning=FALSE, paged.print=FALSE, verbose=FALSE}
+DJ_dfm %>% 
+  textstat_frequency(n = 30) %>% 
+  ggplot(aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_point() +
+  coord_flip() +
+  labs(x = NULL, y = "Frequency") +
+  theme_minimal()
+```
+ 
+ DC에서는 가장 많은 관심을 받았던 명성에 대한 관심이 없다는 점이 눈에 띕니다. 그렇지만, 두 번째로 많은 관심을 받았고 명성과 깊은 연관성을 지닌, 파죽마는 던파조선에서도 여전히 높은 인기를 끌고 있었습니다.
+
+###각 커뮤니티 상위 100개 빈도수 단어들의 교집합
+
+ 조금씩 다르기는 하지만, 둘 모두에서 몇 가지 눈에 띄는 단어들이 존재함을 확인할 수 있었습니다. 이를 좀 더 자세히 알아보기 위해 빈도수, 상위 100개의 단어들에서 교집합을 취하면 좀 더 명확히 확인 할 수 있습니다.
+```{r top100 intersect, echo=FALSE}
+DC_100<-names(topfeatures(DC_dfm,100))
+DJ_100<-names(topfeatures(DJ_dfm,100))
+DC_DJ_intersect<-intersect(DC_100,DJ_100)
+DC_DJ_intersect<-DC_DJ_intersect[-c(24,25,26,30,32,34,37,38,39)]
+
+```
+ 파죽마, 감전 세팅, 딜, 베릴, 버퍼, 화상 세팅, 히마, 에픽무기, 출혈 세팅, 속강, 피로도, 아칸, 무력화, 마법석 순으로 유저들의 관심이 많음을 확인할 수 있을 것입니다.
+ 
+ 
+```{r ngrams(bi,tri),echo=FALSE, fig.showtext=TRUE}  
+##ngram 만들기
+DC_bigram<-tokens_ngrams(DC_tokens,n=2)
+DC_trigram<-tokens_ngrams(DC_tokens,n=3)
+DJ_bigram<-tokens_ngrams(DJ_tokens,n=2)
+DJ_trigram<-tokens_ngrams(DJ_tokens,n=3)
+DC_bi_dfm<-dfm(DC_bigram)
+DC_tri_dfm<-dfm(DC_trigram)
+DJ_bi_dfm<-dfm(DJ_bigram)
+DJ_tri_dfm<-dfm(DJ_trigram)
+``` 
+### DC 던전앤 파이터즈 갤러리 bigram 시각화
+```{r DC바이그램 시각화,echo=FALSE,fig.showtext=TRUE}
+##광고 많아서 제거
+remove_list<-names(topfeatures(DC_bi_dfm,30))
+DC_bi_dfm<-DC_bi_dfm %>% dfm_remove(remove_list)
+##다시 쓸모없는 리스트 제거
+remove_list<-names(topfeatures(DC_bi_dfm,20))[c(4,5,6,7,8,9,10,11,17)]
+DC_bi_dfm<-DC_bi_dfm %>% dfm_remove(remove_list)
+
+DC_bi_dfm %>% 
+  textstat_frequency(n = 14) %>% 
+  ggplot(aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_point() +
+  coord_flip() +
+  labs(x = NULL, y = "Frequency") +
+  theme_minimal()
+```
+ 역시, 105lv 아이템들을 얻을 수 있는 히킹과, 파괴된 죽음의 성 컨텐츠에 대한 관심이 눈에 띈다. 
+```{r 던조 바이그램 시각화, echo=FALSE,fig.showtext=TRUE}
+DJ_bi_dfm %>% 
+  textstat_frequency(n = 40) %>% 
+  ggplot(aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_point() +
+  coord_flip() +
+  labs(x = NULL, y = "Frequency") +
+  theme_minimal()
+
+```
+ 무력화 게이지, 105lv 에픽, 피로도 소모에 대한 언급들이 눈에 띈다. 그 외에는, 아이템 옵션에 대한 언급들.
+ 
+```{r ngrams,echo=FALSE,fig.showtext=TRUE} 
+##추려놓은 것들 확인
+DC_bi_dfm<- DC_bi_dfm %>%  dfm_select(DC_DJ_intersect,valuetype = 'regex') 
+
+topfeatures(DC_bi_dfm,20)
+
+DJ_bi_dfm<- DJ_bi_dfm %>%  dfm_select(DC_DJ_intersect,valuetype = 'regex')
+topfeatures(DJ_bi_dfm,20) 
+``` 
+
+
+## Conclusion
+
+ 현재 대부분의 유저들의 관심사는 105lv - 110lv 구간입니다. 105lv 아이템, 110lv 던전인 파죽성, 명성, 피로도, 무력화게이지에 대한 관심이 이를 반증합니다. 이벤트를 거치면 던전앤 파이터즈를 처음 접하는 유저도 하루에서 이틀 사이에 100lv을 찍을 수 있습니다. 그렇기 때문에, 이러한 관심은 당연해 보입니다.
+ 
+ 반대로 생각하면, '1~105lv 까지의 컨텐츠는 상대적으로 다른 게임과의 차별이 어렵지 않을까?' 라는 의문이 듭니다. 
