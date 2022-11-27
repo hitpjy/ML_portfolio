@@ -50,3 +50,13 @@
    2) 만든 모델들의 설명력이 너무 낮았다는 점
    
 ## Cook County Tax appeal Process
+  1.Objective
+   1)
+   
+   
+   
+   
+   
+## 농수산 가격 예측 AI
+
+## 던전앤파이터즈 EDA
