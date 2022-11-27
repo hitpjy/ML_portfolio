@@ -45,13 +45,16 @@
   1. Objective
    
    To understand,
+   
    1) What variables influence whether a property owner appeals?
    2) What influences the monetary reduction they gain from appeal?
-   to know whethere there exists unfairness or bias.
+    
+   to know whether there exists unfairness or bias.
   
   2. PART 2 - Predictors of Appeal Reduction and Fairness를 맡아서 진행
    
    3가지 가설의 검증에 초점을 맞추고 진행(OLS regression를 활용)
+   
    1) As AV/MV(assessed value to maket value ratio) increases, monetary award would increase.
    2) high income, majority white neighbors tend to get advantage on getting appeal.
    3) region would matter.
@@ -62,7 +65,9 @@
    2) 만든 모델들의 설명력이 너무 낮았다는 점
    
 ## Cook County Tax appeal Process
+
   1.Objective
+  
    1)
    
    
@@ -71,6 +76,32 @@
    
 ## 농수산 가격 예측 AI
 
+ 1.Obejective
+  
+  -농산물 가격 변동률 예측 AI 모델 개발
+  -평가지표: MAE
+  
+ 2.About the Dataset
+  
+  -37개 품목에 대한 시계열 데이터
+  -raw데이터는 품목별 날씨, 품목별 가격, 품목별 도매 데이터, 품목별 소매 데이터, 품목별 무역 수출입 기록 등으로 이루어진 데이터
+  
+ 3.MODEL
+  
+  -NHITS 모델(pytorch forecast)활용
+  
+ 4.아쉬운 점
+ 
+  -hyperparameters tuning을 못한점
+  -Feature Selection?
+  
+  
 ## 던전앤파이터즈 EDA
 
-
+ 1.Objective
+  PC 던전 앤 파이터즈 게임에 대한 유저들의 관심사를 알기 위한 EDA
+ 
+ 2.Method
+  던파 유저들의 트래픽이 몰리는 커뮤니티들(던파조선, DC던전앤파이터즈 갤러리) 크롤링 후, token화 하여 token frequency를 시각화
+  
+  
